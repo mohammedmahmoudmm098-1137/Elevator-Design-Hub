@@ -39,7 +39,53 @@ if choice == "📐 AutoCAD Design":
 elif choice == "📊 Traffic Analysis":
     st.header("تحليل حركة المرور (Traffic Analysis)")
     
-    ref_link = st.text_input("لينك مرجع الأكواد (Link Reference)")
+# --- داخل قسم Traffic Analysis في ملف app.py ---
+
+def calculate_traffic(floors, population, speed, capacity):
+    # فرضيات هندسية بسيطة:
+    # d: المسافة المتوسطة بين الأدوار (3.5 متر)
+    # tv: زمن السفر بين الأدوار = المسافة / السرعة
+    # t_stop: زمن التوقف لفتح وإغلاق الأبواب (حوالي 8 ثوانٍ)
+    
+    dist_total = floors * 3.5
+    tv = 3.5 / speed
+    t_stop = 8 
+    
+    # حساب عدد التوقفات المتوقعة (S) بناءً على عدد الركاب (P)
+    # P هنا هي حمولة الكابينة (نفرض 80% من السعة)
+    p = capacity * 0.8 / 75 # متوسط وزن الراكب 75 كجم
+    
+    # معادلة RTT المبسطة
+    rtt = (2 * floors * tv) + (p * t_stop) + (2 * dist_total / speed)
+    
+    # حساب قدرة النقل في 5 دقائق (Handling Capacity - HC)
+    hc = (300 * p * 1.0) / rtt # لعدد 1 مصعد
+    
+    return round(rtt, 2), round(hc, 2)
+
+# التفاعل مع الواجهة
+if choice == "📊 Traffic Analysis":
+    st.header("حسابات تحليل حركة المرور الهندسية")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        floors = st.number_input("عدد الطوابق فوق الأرضي", value=10)
+        pop = st.number_input("إجمالي السكان", value=200)
+        cap = st.selectbox("حمولة المصعد (كجم)", [450, 630, 800, 1000, 1275])
+        speed = st.selectbox("السرعة (م/ث)", [1.0, 1.6, 1.75, 2.0])
+        
+    if st.button("بدء التحليل الهندسي"):
+        rtt, hc = calculate_traffic(floors, pop, speed, cap)
+        
+        st.subheader("النتائج:")
+        k1, k2 = st.columns(2)
+        k1.metric("زمن الرحلة (RTT)", f"{rtt} ثانية")
+        k2.metric("قدرة النقل (في 5 دقائق)", f"{hc} شخص")
+        
+        # تحليل النتيجة
+        required_hc = pop * 0.12 # المستهدف عادة 12% من السكان
+        num_lifts = round(required_hc / hc) + 1
+        st.success(f"النتيجة: تحتاج إلى **{num_lifts} مصاعد** لتلبية الطلب في وقت الذروة.")
     
     col1, col2 = st.columns(2)
     with col1:
