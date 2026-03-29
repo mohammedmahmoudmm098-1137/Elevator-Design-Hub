@@ -1,40 +1,101 @@
 import streamlit as st
-import pandas as pd
+import ezdxf
+import io
 
 # إعدادات الصفحة
 st.set_page_config(page_title="Elevator Design Hub", layout="wide")
 
 # العنوان الرئيسي
-st.title("🏗️ Elevator Design & Analysis Hub")
+st.title("🏗️ Elevator Design Hub - مسقط أفقي للمصعد")
 st.markdown("---")
 
-# القائمة الجانبية للتنقل
-menu = ["📐 AutoCAD Design", "📊 Traffic Analysis", "📄 Spec Summarizer"]
-choice = st.sidebar.selectbox("اختر الأداة", menu)
+# وظيفة إنشاء رسم المصعد من الصفر
+def generate_elevator_plan(s_width, s_depth, c_width, c_depth):
+    # 1. إنشاء مستند DXF جديد
+    doc = ezdxf.new('R2010')
+    msp = doc.modelspace()
 
-# --- القسم الأول: تصميم الأوتوكاد ---
-if choice == "📐 AutoCAD Design":
-    st.header("تعديل رسومات الأوتوكاد")
-    col1, col2 = st.columns(2)
+    # 2. إنشاء الطبقات (Layers) لتنظيم الرسم
+    doc.layers.new('Shaft', dxfattribs={'color': 7}) # أبيض للبئر
+    doc.layers.new('Car', dxfattribs={'color': 1})   # أحمر للكابينة
+    doc.layers.new('Rails', dxfattribs={'color': 3}) # أخضر للسكك
+    doc.layers.new('Counterweight', dxfattribs={'color': 5}) # أزرق للثقل
+
+    # 3. رسم بئر المصعد (Shaft) كـ Polyline مغلق
+    shaft_points = [(0, 0), (s_width, 0), (s_width, s_depth), (0, s_depth), (0, 0)]
+    msp.add_lwpolyline(shaft_points, dxfattribs={'layer': 'Shaft'})
+
+    # 4. حساب مكان الكابينة (توسيطها في العرض، وترك مسافة للأبواب في الأمام)
+    car_x = (s_width - c_width) / 2
+    car_y = 200 # مسافة للأبواب (Clearance) من الأمام
+    car_points = [
+        (car_x, car_y), 
+        (car_x + c_width, car_y), 
+        (car_x + c_width, car_y + c_depth), 
+        (car_x, car_y + c_depth), 
+        (car_x, car_y)
+    ]
+    msp.add_lwpolyline(car_points, dxfattribs={'layer': 'Car'})
+
+    # 5. رسم السكك (Rails) - خطوط بسيطة للتوضيح
+    # سكة على اليمين وسكة على اليسار في منتصف العمق
+    rail_y = s_depth / 2
+    msp.add_line((0, rail_y), (100, rail_y), dxfattribs={'layer': 'Rails'}) # سكة يسار
+    msp.add_line((s_width - 100, rail_y), (s_width, rail_y), dxfattribs={'layer': 'Rails'}) # سكة يمين
+
+    # 6. رسم الثقل (Counterweight) - مستطيل بسيط في الخلف
+    cw_width = c_width * 0.8 # عرض الثقل 80% من الكابينة
+    cw_depth = 100 # عمق الثقل
+    cw_x = (s_width - cw_width) / 2
+    cw_y = s_depth - cw_depth - 50 # مسافة من الخلف
+    cw_points = [
+        (cw_x, cw_y),
+        (cw_x + cw_width, cw_y),
+        (cw_x + cw_width, cw_y + cw_depth),
+        (cw_x, cw_y + cw_depth),
+        (cw_x, cw_y)
+    ]
+    msp.add_lwpolyline(cw_points, dxfattribs={'layer': 'Counterweight'})
+
+    # 7. حفظ الملف في ذاكرة مؤقتة للتحميل
+    out_buffer = io.BytesIO()
+    doc.write(out_buffer)
+    return out_buffer.getvalue()
+
+# --- واجهة المستخدم (Streamlit) ---
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    st.subheader("إدخال الأبعاد (مم)")
+    s_width = st.number_input("عرض البئر (Shaft Width)", value=1600)
+    s_depth = st.number_input("عمق البئر (Shaft Depth)", value=1800)
+    c_width = st.number_input("عرض الكابينة (Car Width)", value=1100)
+    c_depth = st.number_input("عمق الكابينة (Car Depth)", value=1400)
     
-    with col1:
-        st.subheader("إدخال الأبعاد")
-        s_width = st.number_input("عرض البئر (Shaft Width) مم", value=1600)
-        s_depth = st.number_input("عمق البئر (Shaft Depth) مم", value=1800)
-        c_width = st.number_input("عرض الكابينة (Car Width) مم", value=1100)
-        c_depth = st.number_input("عمق الكابينة (Car Depth) مم", value=1400)
-        
-        uploaded_cad = st.file_uploader("ارفع ملف الرسم المرجعي (.dxf)", type=['dxf'])
-        
-        if st.button("Generate Updated Drawing"):
-            st.success(f"تم تحديث الرسم بالأبعاد: {s_width}x{s_depth}")
-            st.info("ملاحظة: يتطلب ربط مكتبة ezdxf في السيرفر لتوليد الملف الحقيقي.")
+    st.markdown("---")
+    if st.button("توليد ملف الأوتوكاد (DXF)"):
+        # التأكد من منطقية الأبعاد
+        if c_width >= s_width or c_depth >= s_depth:
+            st.error("خطأ: أبعاد الكابينة لا يمكن أن تكون أكبر من أبعاد البئر!")
+        else:
+            with st.spinner('جاري إنشاء الرسم...'):
+                dxf_file = generate_elevator_plan(s_width, s_depth, c_width, c_depth)
+                st.success("تم إنشاء الرسم بنجاح!")
+                st.download_button(
+                    label="📥 تحميل ملف DXF",
+                    data=dxf_file,
+                    file_name=f"Elevator_{s_width}x{s_depth}.dxf",
+                    mime="application/dxf"
+                )
 
-    with col2:
-        st.info("معاينة التصميم ستظهر هنا (مساحة تخطيطية)")
-        # رسم مبسط يوضح الفكرة
-        st.write(f"مخطط البئر الحالي: {s_width} مم × {s_depth} مم")
-
+with col2:
+    st.info("معاينة تخطيطية (غير دقيقة)")
+    # رسم مبسط جداً بالـ HTML للتوضيح فقط
+    st.markdown(f"""
+    <div style="border: 2px solid black; width: {s_width/5}px; height: {s_depth/5}px; position: relative; background-color: #f0f0f0;">
+        <div style="border: 2px solid red; width: {c_width/5}px; height: {c_depth/5}px; position: absolute; left: {(s_width-c_width)/10}px; top: 40px; background-color: white; text-align: center; line-height: {c_depth/5}px;">Car</div>
+    </div>
+    """, unsafe_allow_html=True)
 # --- القسم الثاني: تحليل الحركة ---
 elif choice == "📊 Traffic Analysis":
     st.header("تحليل حركة المرور (Traffic Analysis)")
